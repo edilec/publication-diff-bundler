@@ -1,0 +1,17 @@
+{
+  "name": "publication-diff-bundler",
+  "version": "0.0.0",
+  "description": "Create a reviewable bundle of text, links and metadata changed in a release.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edilec/publication-diff-bundler"
+  }
+}
