@@ -324,15 +324,25 @@ async function collectDocuments(rootReal, side, limits, collector) {
         if (documentShaped(entry.name) && !addCandidate(unknownCandidate(childRelative))) return
         continue
       }
-      if (visited.has(realPath)) continue
-      visited.add(realPath)
-
       if (info.isDirectory()) {
         if (SKIPPED_DIRECTORIES.includes(entry.name)) continue
+        // The visited set guards the *walk*, and only the walk. A symlinked
+        // directory pointing back up the tree would otherwise recurse forever,
+        // and one mirroring a sibling would walk a whole subtree twice.
+        if (visited.has(realPath)) continue
+        visited.add(realPath)
         await walk(realPath, childRelative, depth + 1)
         continue
       }
       if (!documentShaped(entry.name)) continue
+
+      // A regular file is never deduplicated by real path. Two names in one
+      // listing that resolve to the same file are two present documents, and
+      // presence is decided by the listing: dropping the second name makes the
+      // other snapshot look as though it had added or deleted a document that
+      // is sitting right there, and lets a real content change under that name
+      // reach a pass. There is nothing to guard against here either -- a file
+      // is read, never walked, so it cannot loop.
 
       // An entry named like a document that is not a regular file -- a FIFO, a
       // socket, a device node -- cannot be read as one, and reading from it

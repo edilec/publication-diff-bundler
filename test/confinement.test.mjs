@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 
 import {
   bundlePublicationDiff,
@@ -10,6 +13,19 @@ import {
   resolveBundleDestination,
   writeBundleFile,
 } from '../src/index.mjs'
+
+const execFileAsync = promisify(execFile)
+const projectDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const cli = join(projectDirectory, 'bin', 'publication-diff-bundler.mjs')
+
+async function runCli(before, after) {
+  return execFileAsync(process.execPath, [cli, '--before', before, '--after', after], { cwd: projectDirectory })
+    .then((result) => ({ code: 0, ...result }), (error) => ({ code: error.code, stdout: error.stdout }))
+}
+
+function rulesAt(report, file) {
+  return report.findings.filter((finding) => finding.location.file === file).map((finding) => finding.ruleId)
+}
 
 async function workspace(t) {
   const root = await mkdtemp(join(tmpdir(), 'publication-diff-'))
@@ -96,6 +112,82 @@ test('a symlinked directory that stays inside the root is walked normally', asyn
   // `mirror` is the path that reaches the report and `real` is recognised as
   // the same file rather than counted twice.
   assert.deepEqual(added.map((finding) => finding.location.file), ['mirror/extra.html'])
+})
+
+test('a file reachable under a second name is compared, not dropped from the listing', async (t) => {
+  // The defect: the walk's real-path guard exists to stop a symlinked
+  // *directory* from looping or duplicating a subtree. Applied to a regular
+  // file it deleted a readable document from one snapshot's listing, and
+  // presence is decided by the listings -- so the other snapshot looked as
+  // though it had added a document that is sitting right there, and the real
+  // difference between the two `b.html` files was never compared at all.
+  const root = await workspace(t)
+  await writeFile(join(root, 'before', 'a.html'), '<p>kept</p><p>dropped</p>')
+  await symlink('a.html', join(root, 'before', 'b.html'))
+  await writeFile(join(root, 'after', 'a.html'), '<p>kept</p><p>dropped</p>')
+  await writeFile(join(root, 'after', 'b.html'), '<p>kept</p>')
+
+  const { report, bundle } = await bundlePublicationDiff({
+    before: join(root, 'before'),
+    after: join(root, 'after'),
+  })
+
+  assert.deepEqual(
+    bundle.snapshots.before.files.map((entry) => entry.file),
+    ['a.html', 'b.html', 'index.html'],
+    'a readable document vanished from the before listing',
+  )
+  assert.equal(report.findings.some((finding) => finding.ruleId === 'document-added'), false)
+  assert.deepEqual(rulesAt(report, 'b.html'), ['content-removed'])
+  assert.equal(report.summary.compared, 3)
+  assert.equal(report.summary.added, 0)
+  assert.equal(report.status, 'fail')
+
+  // The whole point of the verdict: this run must refuse, at the real exit code.
+  const cli = await runCli(join(root, 'before'), join(root, 'after'))
+  assert.equal(cli.code, 1)
+  assert.match(cli.stdout, /status fail/)
+  assert.equal(cli.stdout.includes('document-added'), false)
+})
+
+test('the second name is compared in the other direction too', async (t) => {
+  const root = await workspace(t)
+  await writeFile(join(root, 'before', 'a.html'), '<p>kept</p>')
+  await writeFile(join(root, 'before', 'b.html'), '<p>kept</p><p>dropped</p>')
+  await writeFile(join(root, 'after', 'a.html'), '<p>kept</p>')
+  await symlink('a.html', join(root, 'after', 'b.html'))
+
+  const { report, bundle } = await bundlePublicationDiff({
+    before: join(root, 'before'),
+    after: join(root, 'after'),
+  })
+
+  assert.deepEqual(bundle.snapshots.after.files.map((entry) => entry.file), ['a.html', 'b.html', 'index.html'])
+  // after/b.html is present on disk, so claiming the before snapshot deleted
+  // it would be a verdict about a document nobody looked at.
+  assert.equal(report.findings.some((finding) => finding.ruleId === 'document-removed'), false)
+  assert.deepEqual(rulesAt(report, 'b.html'), ['content-removed'])
+  assert.equal(report.status, 'fail')
+})
+
+test('a second name for an unchanged file is compared and stays a pass', async (t) => {
+  // The other half of the same guarantee: listing the alias must not invent a
+  // change either. Both names hold the same bytes on both sides.
+  const root = await workspace(t)
+  await writeFile(join(root, 'before', 'a.html'), '<p>same</p>')
+  await symlink('a.html', join(root, 'before', 'b.html'))
+  await writeFile(join(root, 'after', 'a.html'), '<p>same</p>')
+  await writeFile(join(root, 'after', 'b.html'), '<p>same</p>')
+
+  const { report, bundle } = await bundlePublicationDiff({
+    before: join(root, 'before'),
+    after: join(root, 'after'),
+  })
+
+  assert.equal(report.status, 'pass')
+  assert.deepEqual(report.findings, [])
+  assert.equal(report.summary.compared, 3)
+  assert.equal(bundle.snapshots.before.digest, bundle.snapshots.after.digest)
 })
 
 test('the bundle destination is refused inside either snapshot root', async (t) => {

@@ -16,9 +16,15 @@ Two snapshot roots are walked: `--before` and `--after`. Files ending in `.html`
 - Both sides of that check are resolved. Comparing a resolved root against an unresolved candidate
   would refuse documents that are genuinely inside a snapshot reached through a symbolic link, and a
   false refusal is a defect in its own right.
-- A real path already seen is not visited twice, so a symlinked directory inside a snapshot cannot
-  duplicate a document or loop the walk. Entries are visited in UTF-16 code-unit order, so when the
-  same file is reachable by two names the first name in that order is the one reported.
+- A directory whose real path has already been walked is not walked again, so a symlinked directory
+  inside a snapshot cannot loop the walk or duplicate a subtree. Entries are visited in UTF-16
+  code-unit order, so when the same directory is reachable by two names the first of those names in
+  that order is the one walked.
+- That guard is for the walk, and it covers directories only. A regular file reachable under two
+  names in the same listing is listed, read and compared under each of them. Presence is decided by
+  the listing: dropping the second name would make the other snapshot look as though it had added or
+  removed a document that is sitting right there, and would leave whatever changed under that name
+  uncompared.
 - File bytes are decoded with `TextDecoder('utf-8', { fatal: true })`. Whether bytes are UTF-8 is the
   decoder's decision; the decoded text is never inspected to make that judgement. There is no
   configuration file, so this is the only decoding path in the tool: all configuration arrives as

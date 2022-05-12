@@ -22,4 +22,12 @@ recorded here.
 - Stable output: no clock reading, no absolute path, no locale-dependent ordering, and a
   byte-identical bundle for the same pair of snapshots.
 
+### Fixed
+
+- A regular file reachable under a second name inside one snapshot -- a symlink beside the file it
+  points at -- is listed, read and compared under each of its names. It was dropped from that
+  snapshot's listing by the walk's real-path guard, which turned the other snapshot's copy into a
+  false `document-added` or `document-removed` and let a real content change under that name reach
+  status `pass`. The guard now applies to directories, where it exists to stop the walk looping.
+
 No release has been published.
