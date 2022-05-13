@@ -154,13 +154,14 @@ test('the documented whitespace modes are the shipped whitespace modes', async (
 })
 
 test('directory listings are ordered before they are used', async () => {
-  // This one is asserted against the source rather than against behaviour, and
-  // the reason is worth writing down: the filesystems these tests run on
-  // already hand back entries in code-unit order, so removing the sort changes
-  // nothing observable *here*. It changes everything on a filesystem that does
-  // not -- the walk order, and with it which of two links to the same file is
-  // reported. A behavioural test that cannot fail on this host would be a
-  // tautology; this assertion at least fails when the sort is deleted.
+  // This one is asserted against the source, and only for the mutation that
+  // *deletes* the sort: the filesystems these tests run on already hand back
+  // entries in code-unit order, so a deletion changes nothing observable
+  // *here*. It changes everything on a filesystem that does not -- the walk
+  // order, and with it which of two names for the same directory is reported.
+  // Replacing the comparator is a different mutation and is pinned by what the
+  // tool emits: see 'directory entries are walked in code-unit order' in
+  // test/ordering.test.mjs, where a collator reports the other name.
   const source = await readProjectFile('src/index.mjs')
   assert.equal(
     source.includes('entries.sort((left, right) => byCodeUnit(left.name, right.name))'),
