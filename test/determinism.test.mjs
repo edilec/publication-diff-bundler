@@ -75,7 +75,16 @@ test('the bundle is byte-identical for the same content in a different location'
   assert.equal(JSON.stringify(first.bundle, null, 2), JSON.stringify(second.bundle, null, 2))
   assert.equal(first.bundle.snapshots.before.digest, second.bundle.snapshots.before.digest)
   assert.notEqual(first.bundle.snapshots.before.digest, first.bundle.snapshots.after.digest)
-  assert.notEqual(firstPair[0], secondPair[0])
+
+  // The premise the comparison above rests on. Asserting that the two
+  // mkdtemp roots differ cannot fail -- mkdtemp always returns a fresh
+  // directory -- so it defends nothing. What can fail is this comparison
+  // going vacuous: two bundles that examined less than the fixture holds,
+  // or nothing at all, are byte-identical for the wrong reason.
+  assert.equal(first.bundle.documents.length, 2, 'the fixture no longer reaches both documents')
+  assert.equal(first.bundle.counts.compared, 2)
+  assert.equal(first.bundle.counts.changes, 6)
+  assert.deepEqual(first.bundle.documents.map((entry) => entry.file), ['deep/nested.md', 'index.html'])
 })
 
 test('the output carries no absolute path, host detail or clock reading', async (t) => {
