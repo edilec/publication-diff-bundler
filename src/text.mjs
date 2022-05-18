@@ -41,16 +41,33 @@ export function decodeUtf8(bytes) {
  *
  * Built from code points rather than written literally: a literal U+2028 inside
  * a module is a syntax hazard, and the point of the class is that these
- * characters never reach a report line in the first place. U+2028 and U+2029
- * terminate a line for a JavaScript consumer, and a bare newline forges a line
- * in the human report -- which is why this is applied to identifiers, paths and
- * keys, not only to excerpt text.
+ * characters never reach a report line in the first place. Every class here
+ * forges or hides something in an output somebody reads:
+ *
+ * - **C0** (U+0000-U+001F) and **DEL** (U+007F): a bare newline forges a line
+ *   in the human report; the rest drive a terminal.
+ * - **C1** (U+0080-U+009F): U+0085 is NEL, which starts a new line on a
+ *   terminal exactly as a newline does, and U+009B is the 8-bit CSI, which
+ *   opens an escape sequence. Neither is ECMAScript whitespace and neither is
+ *   escaped by `JSON.stringify`, so a class that stops at C0 lets both through
+ *   to stdout intact.
+ * - **U+2028 and U+2029**: they terminate a line for a JavaScript consumer.
+ * - **Bidi controls** (U+200E, U+200F, U+202A-U+202E, U+2066-U+2069): U+202E
+ *   reverses the text displayed after it, so a file named one thing is read as
+ *   another; the isolates hide what they wrap.
+ *
+ * This is applied to identifiers, paths and keys, not only to excerpt text: an
+ * untrusted string is untrusted wherever it arrived from.
  */
 const CONTROL = new RegExp(
   `[${String.fromCharCode(0)}-${String.fromCharCode(8)}` +
   `${String.fromCharCode(11)}${String.fromCharCode(12)}` +
   `${String.fromCharCode(14)}-${String.fromCharCode(31)}` +
-  `${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]`,
+  `${String.fromCharCode(127)}-${String.fromCharCode(0x9f)}` +
+  `${String.fromCharCode(0x200e)}${String.fromCharCode(0x200f)}` +
+  `${String.fromCharCode(0x202a)}-${String.fromCharCode(0x202e)}` +
+  `${String.fromCharCode(0x2066)}-${String.fromCharCode(0x2069)}` +
+  `${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]`,
   'g',
 )
 

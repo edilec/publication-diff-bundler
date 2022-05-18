@@ -29,5 +29,9 @@ recorded here.
   snapshot's listing by the walk's real-path guard, which turned the other snapshot's copy into a
   false `document-added` or `document-removed` and let a real content change under that name reach
   status `pass`. The guard now applies to directories, where it exists to stop the walk looping.
+- Output sanitising covers the C1 range (U+0080-U+009F) and the bidi controls (U+200E, U+200F,
+  U+202A-U+202E, U+2066-U+2069) as well as C0, DEL, U+2028 and U+2029. U+0085 (NEL) and U+009B (the
+  8-bit CSI) are not ECMAScript whitespace and are not escaped by `JSON.stringify`, so both used to
+  reach stdout intact -- from a path or a metadata key as readily as from an excerpt.
 
 No release has been published.

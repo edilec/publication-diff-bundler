@@ -196,6 +196,37 @@ test('--whitespace reaches the engine and changes what is reported', async (t) =
   assert.equal(preserved.summary.whitespaceOnly, 0)
 })
 
+test('a snapshot path carrying a C1 or bidi character reaches neither stdout nor the bundle', async (t) => {
+  // The real entry point, the real bytes. U+0085 (NEL) is a line break to a
+  // terminal, U+202E reverses what is displayed after it, and neither is
+  // escaped by JSON.stringify -- so if the sanitiser misses them they arrive
+  // on stdout exactly as the snapshot spelled them.
+  const root = await workspace(t)
+  const NEL = String.fromCharCode(0x85)
+  const RLO = String.fromCharCode(0x202e)
+  const CSI = String.fromCharCode(0x9b)
+  await writeFile(join(root, 'before', 'kept.html'), '<p>x</p>')
+  await writeFile(join(root, 'after', 'kept.html'), '<p>x</p>')
+  await writeFile(join(root, 'after', `evil${NEL}ERROR   forged${RLO}rule${CSI}m.html`), '<p>y</p>')
+  const destination = join(root, 'out', 'bundle.json')
+
+  const base = ['--before', join(root, 'before'), '--after', join(root, 'after'), '--bundle', destination]
+  const human = await run(base)
+  const machine = await run([...base, '--json'])
+  const written = await readFile(destination, 'utf8')
+
+  assert.equal(human.code, 0)
+  assert.equal(machine.code, 0)
+  for (const character of [NEL, RLO, CSI]) {
+    const label = `U+${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`
+    assert.equal(human.stdout.includes(character), false, `${label} reached the human report`)
+    assert.equal(machine.stdout.includes(character), false, `${label} reached the JSON report`)
+    assert.equal(written.includes(character), false, `${label} reached the bundle file`)
+  }
+  assert.equal(human.stdout.includes('evil ERROR forged rule m.html'), true)
+  assert.equal(human.stdout.split(String.fromCharCode(10)).filter((line) => line.startsWith('ERROR')).length, 0)
+})
+
 test('a snapshot path containing a newline cannot forge a line in the human report', async (t) => {
   const root = await workspace(t)
   const forged = `evil${String.fromCharCode(10)}ERROR   forged-rule was never emitted`

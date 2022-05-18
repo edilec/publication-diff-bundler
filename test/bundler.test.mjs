@@ -370,6 +370,61 @@ test('an identifier containing a newline cannot forge a line in the human report
   assert.equal(bundle.snapshots.before.files.some((entry) => entry.file.includes(String.fromCharCode(10))), false)
 })
 
+test('a control or bidi character reaching output through an identifier is stripped', async (t) => {
+  // Three different routes into the output, and the first two are identifiers
+  // rather than excerpts: a relative path, a metadata key, and a block of
+  // prose. U+0085 (NEL) starts a new line on a terminal exactly as a newline
+  // does, U+009B is the 8-bit CSI, U+202E reverses everything displayed after
+  // it, and U+2066 hides what it wraps. None of them is ECMAScript whitespace
+  // and none is escaped by JSON.stringify, so a class that stops at C0 and the
+  // two separators lets every one of them through to stdout intact.
+  const NEL = String.fromCharCode(0x85)
+  const CSI = String.fromCharCode(0x9b)
+  const RLO = String.fromCharCode(0x202e)
+  const SEPARATOR = String.fromCharCode(0x2028)
+  const ISOLATE = String.fromCharCode(0x2066)
+  const forbidden = [NEL, CSI, RLO, SEPARATOR, ISOLATE, String.fromCharCode(0x7f), String.fromCharCode(0)]
+
+  const beforeRoot = await tree(t, { 'index.html': '<html><head></head><body><p>kept</p></body></html>' })
+  const afterRoot = await tree(t, {
+    [`evil${NEL}ERROR   forged-rule was never emitted.html`]: '<p>added</p>',
+    'index.html':
+      `<html><head><meta name="key${RLO}reversed" content="value${CSI}m"></head>` +
+      `<body><p>kept${SEPARATOR}${ISOLATE}rewritten</p></body></html>`,
+  })
+
+  const { report, bundle } = await bundlePublicationDiff({ before: beforeRoot, after: afterRoot })
+  const emitted = `${formatReport(report, bundle)}${JSON.stringify(report)}${JSON.stringify(bundle)}`
+
+  for (const character of forbidden) {
+    assert.equal(
+      emitted.includes(character),
+      false,
+      `U+${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')} reached the output`,
+    )
+  }
+  // Each route really was exercised: the path and the key arrived as
+  // identifiers, the prose as an excerpt.
+  assert.deepEqual(
+    report.findings.map((finding) => finding.location.file).sort(),
+    ['evil ERROR forged-rule was never emitted.html', 'index.html', 'index.html'],
+  )
+  assert.equal(
+    report.findings.some((finding) => finding.location.pointer === '/after/metadata/meta:name=key reversed'),
+    true,
+    'the metadata key never reached a pointer, so this fixture proves nothing about identifiers',
+  )
+  assert.equal(
+    report.findings.some((finding) => finding.evidence !== undefined && finding.evidence.includes('rewritten')),
+    true,
+    'no excerpt reached the evidence field, so this fixture proves nothing about excerpts',
+  )
+  // The forged line is flattened into the line it was smuggled into.
+  const lines = formatReport(report, bundle).split(String.fromCharCode(10))
+  assert.equal(lines.filter((line) => line.startsWith('ERROR')).length, 0)
+  assert.equal(lines.filter((line) => line.includes('forged-rule was never emitted')).length, 1)
+})
+
 test('options, limits and the whitespace mode are validated rather than guessed at', async () => {
   const before = example('snapshot-before')
   const after = example('snapshot-after-clean')

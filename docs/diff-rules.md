@@ -215,11 +215,24 @@ The bundle is a derived artifact written only to `--bundle`.
 
 ## Output sanitising
 
-Every string that came out of a snapshot is flattened to a single line, stripped of control
-characters including U+2028 and U+2029, and bounded, before it reaches the report or the bundle. That
-applies to identifiers and paths as well as to excerpts: a document named with an embedded newline
-would otherwise forge an extra line in the human report. A metadata key is additionally escaped as a
-JSON Pointer segment, so a key containing `/` cannot splice itself into a pointer.
+Every string that came out of a snapshot is flattened to a single line, stripped of the characters
+below, and bounded, before it reaches the report or the bundle.
+
+| Class | Range | Why |
+| --- | --- | --- |
+| C0 | U+0000-U+001F | a newline forges a line in the human report; the rest drive a terminal |
+| DEL | U+007F | terminal control |
+| C1 | U+0080-U+009F | U+0085 (NEL) breaks a line on a terminal and U+009B is the 8-bit CSI; neither is ECMAScript whitespace and neither is escaped by `JSON.stringify` |
+| Line and paragraph separators | U+2028, U+2029 | they terminate a line for a JavaScript consumer |
+| Bidi controls | U+200E, U+200F, U+202A-U+202E, U+2066-U+2069 | U+202E reverses the text displayed after it, so a name is read as something else; the isolates hide what they wrap |
+
+That applies to identifiers, paths and metadata keys as well as to excerpts: a document named with
+an embedded newline or a NEL would otherwise forge an extra line in the human report, and a metadata
+key carrying U+202E would reverse the line it is printed on. A metadata key is additionally escaped
+as a JSON Pointer segment, so a key containing `/` cannot splice itself into a pointer.
+
+Zero-width characters such as U+200B are **not** stripped: they are invisible but they are content,
+and removing them from an excerpt would hide the edit the excerpt exists to show.
 
 ## Exit codes
 
