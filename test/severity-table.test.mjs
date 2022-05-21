@@ -83,11 +83,16 @@ test('no severity literal is written at a finding construction site', async () =
 test('every rule severity is pinned here, rule by rule', () => {
   // The table and the documented catalog are asserted against each other, so a
   // coordinated edit to both agrees with itself and passes. This is the third
-  // copy, written out by hand: a downgrade has to walk past an expectation that
-  // shares no source with either of them. Downgrading any `error` below turns a
-  // refusal into a green build -- a deleted paragraph, a link that now points
-  // somewhere else, a document that vanished, or evidence that was never read
-  // would all reach status pass.
+  // copy, written out by hand, and it is still only a third declaration: an
+  // edit that changes the table, the docs and this map together agrees with
+  // itself too. Seventeen of the thirty-one rules survived exactly that.
+  //
+  // What a declaration cannot survive is the tool being run. Every rule is
+  // driven through the real entry point in test/severity-behaviour.test.mjs,
+  // where the status, the CLI exit code and the severity word the report
+  // prints are asserted -- and a flip moves one of them. This map is kept for
+  // what it is good at: catching a single rule drifting out of step with the
+  // documented catalog.
   assert.deepEqual({ ...RULE_SEVERITY }, {
     'canonical-changed': 'error',
     'content-added': 'info',

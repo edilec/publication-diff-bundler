@@ -144,8 +144,15 @@ Runs `node --check` over every shipped file, the full `node --test` suite, the e
 `npm pack --dry-run`.
 
 Each guarantee above has a test that fails when the guarantee is removed: delete an `incomplete`
-flag, downgrade a rule's severity, let whitespace normalisation reach a URL, compare a resolved root
-against an unresolved candidate, or drop a key from the finding order, and the suite goes red.
+flag, let whitespace normalisation reach a URL, compare a resolved root against an unresolved
+candidate, or drop a key from the finding order, and the suite goes red.
+
+Two of those tests are deliberately not written against the source. Every rule's severity is pinned
+by running the tool over a snapshot pair that isolates it and asserting the status, the exit code and
+the severity the report prints, so downgrading a rule in the table, the docs and a test expectation
+together still goes red. Ordering is pinned the same way, on inputs whose collation order disagrees
+with their code-unit order, so swapping in a comparator that is not `localeCompare` does not slip
+past a source scan.
 
 ## License
 
