@@ -142,6 +142,7 @@ test('the example bundle regenerates byte for byte', async (t) => {
       '--before', join(projectDirectory, 'examples', 'snapshot-before'),
       '--after', join(projectDirectory, 'examples', 'snapshot-after-broken'),
       '--bundle', join(destination, name),
+      '--bundle-root', destination,
       '--json',
     ], { cwd: projectDirectory }).catch((error) => error)
     runs.push(await readFile(join(destination, name), 'utf8'))

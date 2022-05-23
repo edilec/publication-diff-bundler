@@ -23,9 +23,13 @@ So this tool does three things and refuses to compromise on any of them:
    is what makes a reflowed article reviewable. It applies to prose and to nothing else: a link
    `href`, an image `src` and a canonical URL are compared trimmed but never collapsed, and a block
    of content that is present in one snapshot and absent from the other is a deletion in every mode.
-2. **Neither snapshot is ever written to.** There is no auto-fix and no write path into a snapshot.
-   The bundle is a derived artifact, and its destination is refused if it resolves inside either
-   snapshot root — including through a symlinked parent directory.
+2. **Neither snapshot is ever written to, and neither is anything else you did not name.** There is
+   no auto-fix and no write path into a snapshot. `--bundle` is checked before either snapshot is
+   read and again before the write, and four shapes are refused: a symbolic link at the destination
+   (following it writes wherever the link points, which is not the path you named), a symlinked
+   directory on the way to it, a path that resolves outside `--bundle-root`, and a hard link to a
+   snapshot document (same device and inode, so no path comparison can see it). A destination that
+   resolves inside either snapshot root is refused whatever `--bundle-root` says.
 3. **The bundle is stable.** The same two snapshots always produce a byte-identical bundle: no clock
    reading, no absolute path, no host detail, and every ordering by UTF-16 code unit. Each snapshot
    carries a `sha256` digest, so a bundle can be tied to exactly the bytes it was built from.
@@ -44,6 +48,10 @@ npm install publication-diff-bundler
 publication-diff-bundler --before ./snapshots/v1 --after ./snapshots/v2 \
                          --bundle ./review/bundle.json
 ```
+
+`--bundle` must resolve inside `--bundle-root`, which defaults to the working directory. The
+directory it names has to exist already: a destination whose parent is missing is refused rather
+than created, because the point of the check is that the bundle lands where the path reads.
 
 ```
 3 document(s) examined, 2 compared: 6 error, 1 warning, 0 info, status fail.

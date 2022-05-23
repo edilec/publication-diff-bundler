@@ -25,6 +25,9 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { compareDocuments } from './compare.mjs'
 import { DOCUMENT_EXTENSIONS, parseDocument } from './parse.mjs'
 import { WHITESPACE_MODES, byCodeUnit, decodeUtf8, sanitize } from './text.mjs'
+import { DestinationError, assertWritableDestination } from './write-guard.mjs'
+
+export { DestinationError, assertWritableDestination } from './write-guard.mjs'
 
 export const TOOL_ID = 'publication-diff-bundler'
 export const REPORT_SCHEMA_VERSION = '1'
@@ -103,7 +106,6 @@ export const RULE_SEVERITY = Object.freeze({
 const ALLOWED_OPTIONS = Object.freeze(['after', 'before', 'limits', 'whitespace'])
 const SKIPPED_DIRECTORIES = Object.freeze(['node_modules'])
 const SIDES = Object.freeze(['before', 'after'])
-const ANCESTOR_PROBE_LIMIT = 64
 const PATH_LIMIT = 240
 
 function isRecord(value) {
@@ -147,59 +149,69 @@ export function validateWhitespace(mode) {
 }
 
 /**
- * Resolve the bundle destination and refuse anything inside either snapshot.
+ * Resolve the bundle destination and refuse everything that would put it
+ * somewhere other than the file the caller named.
  *
- * The destination usually does not exist yet, so the nearest existing ancestor
- * is resolved and the remaining segments are appended. That still defeats a
- * symlinked parent directory, which is how a "separate destination" quietly
- * becomes a file written into the snapshot being reviewed.
+ * This function used to resolve the nearest existing ancestor of the
+ * destination and append the remaining segments. That answered the symlinked
+ * *parent* and nothing else: a symlink sitting **at** the destination was
+ * resolved by the same call, so `--bundle link` wrote the bundle over whatever
+ * the link pointed at. Measured, not imagined -- a 48-byte file outside both
+ * snapshots became a 4554-byte bundle while this tool exited 0 and printed
+ * "bundle written".
+ *
+ * `assertWritableDestination` carries the reasoning for all three holes. Three
+ * things are layered on top of it here, because the guard cannot know them:
+ *
+ * - `root` is the tree the bundle may be written into (`--bundle-root`,
+ *   defaulting to the working directory), which is what closes the symlinked
+ *   parent in the positive direction.
+ * - A destination inside either snapshot is refused whatever the root says.
+ *   The parent is resolved first: lexically `reports/bundle.json` is outside
+ *   both roots even when `reports` is a link into one of them.
+ * - `inputs` are the snapshot documents this run read, compared by device and
+ *   inode. A hard link to one of them has no target to resolve and shares no
+ *   path with it, so only identity sees it.
  */
-export async function resolveBundleDestination(roots, destination) {
+export async function resolveBundleDestination(roots, destination, options = {}) {
   if (typeof destination !== 'string' || destination.trim() === '') {
     throw new TypeError('Bundle destination must be a non-empty path')
   }
-  const absolute = resolve(destination)
-  const tail = []
-  let probe = absolute
-  let realBase = null
+  const { inputs = [], root = null } = options
 
-  for (let step = 0; step < ANCESTOR_PROBE_LIMIT; step += 1) {
-    try {
-      realBase = await realpath(probe)
-      break
-    } catch (error) {
-      if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') {
-        throw new TypeError(`Bundle destination could not be resolved: ${error.code ?? 'unknown error'}`)
-      }
-      const parent = dirname(probe)
-      if (parent === probe) throw new TypeError('Bundle destination has no existing ancestor directory')
-      tail.unshift(basename(probe))
-      probe = parent
-    }
+  let resolved
+  try {
+    resolved = await assertWritableDestination(destination, {
+      inputs,
+      root,
+      label: '--bundle',
+      rootLabel: '--bundle-root',
+    })
+  } catch (error) {
+    if (!(error instanceof DestinationError)) throw error
+    throw new TypeError(error.message)
   }
-  if (realBase === null) throw new TypeError('Bundle destination is nested too deeply to resolve')
 
-  const resolved = tail.length === 0 ? realBase : join(realBase, ...tail)
-  // Both sides are resolved before they are compared. Checking a real
-  // destination against a root that was never resolved is the same defect in
-  // the other direction: on a host where the snapshot sits under a symlinked
-  // ancestor, every containment check would silently answer "outside".
-  for (const root of roots) {
+  // The destination itself is not a link -- the guard just refused that shape
+  // -- so resolving its parent is the whole of the resolution, and it is the
+  // resolved parent that decides containment. Comparing a real destination
+  // against a root that was never resolved is the same defect in the other
+  // direction: on a host where a snapshot sits under a symlinked ancestor,
+  // every containment check would silently answer "outside".
+  const parentReal = await realpath(dirname(resolved))
+  const candidate = join(parentReal, basename(resolved))
+  for (const snapshotRoot of roots) {
     let rootReal
     try {
-      rootReal = await realpath(root)
+      rootReal = await realpath(snapshotRoot)
     } catch (error) {
       throw new TypeError(`A snapshot root could not be resolved: ${error.code ?? 'unknown error'}`)
     }
-    if (isInside(rootReal, resolved)) {
+    if (isInside(rootReal, candidate)) {
       throw new TypeError(
         'Bundle destination is inside a snapshot root; the bundle is a derived artifact and must be written elsewhere',
       )
     }
-  }
-  if (tail.length === 0) {
-    const info = await stat(resolved)
-    if (info.isDirectory()) throw new TypeError('Bundle destination is a directory, not a file')
   }
   return resolved
 }
@@ -526,6 +538,11 @@ async function readSnapshot(collector, rootReal, side, limits) {
     entries.push({
       rawFile: entry.file,
       file: sanitize(entry.file, PATH_LIMIT),
+      // Kept so the bundle destination can be compared with every document by
+      // device and inode before anything is written. A hard link to a snapshot
+      // document resolves to its own path, so a path comparison calls it a
+      // different file; it is not.
+      realPath: entry.realPath,
       sha256: loaded.sha256,
       bytes: loaded.bytes,
       ok: loaded.ok,
@@ -730,7 +747,18 @@ export async function bundlePublicationDiff(options = {}) {
     findings,
   }
 
-  return { report, bundle }
+  // Every real path this run actually opened, so the caller can refuse a
+  // destination that is one of them under a second name. It is not part of the
+  // bundle or the report: an absolute host path in either would break
+  // determinism, which is the other guarantee this tool makes.
+  const inputs = []
+  for (const side of SIDES) {
+    for (const entry of snapshots[side]) {
+      if (typeof entry.realPath === 'string') inputs.push(entry.realPath)
+    }
+  }
+
+  return { report, bundle, inputs }
 }
 
 function describeSnapshot(entries) {

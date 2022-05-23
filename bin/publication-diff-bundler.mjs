@@ -24,6 +24,8 @@ Options:
   --before DIR             Snapshot taken before the change (required)
   --after DIR              Snapshot taken after the change (required)
   --bundle FILE            Write the review bundle here; must be outside both roots
+  --bundle-root DIR        Tree --bundle must resolve inside (default: the
+                           working directory)
   --whitespace MODE        collapse (default) ignores reflowed whitespace in prose;
                            preserve reports it as a change
   --json                   Emit the machine-readable report on stdout
@@ -39,6 +41,12 @@ Options:
 
 Every option is accepted once: a repeated flag is a configuration error, not a
 silent last-wins. An unknown option is refused rather than ignored.
+
+--bundle is checked before either snapshot is read and again before the write.
+A symbolic link at the destination, a symlinked directory on the way to it, a
+path that leaves --bundle-root and a hard link to a snapshot document are each
+refused: every one of them writes over a file this tool was never asked to
+touch, and every one of them did so here while the run exited 0.
 
 --whitespace collapse folds runs of whitespace in prose only. It never reaches a
 destination: a link whose href changed, an image whose src changed and a
@@ -68,7 +76,7 @@ const LIMIT_FLAGS = new Map([
 
 function parseArguments(argv) {
   if (argv.includes('-h') || argv.includes('--help')) return { help: true }
-  const options = { before: null, after: null, bundle: null, whitespace: null, json: false, limits: {} }
+  const options = { before: null, after: null, bundle: null, bundleRoot: null, whitespace: null, json: false, limits: {} }
   const given = new Set()
 
   /**
@@ -105,6 +113,9 @@ function parseArguments(argv) {
     } else if (argument === '--bundle') {
       once('--bundle')
       options.bundle = takeValue('--bundle')
+    } else if (argument === '--bundle-root') {
+      once('--bundle-root')
+      options.bundleRoot = takeValue('--bundle-root')
     } else if (argument === '--whitespace') {
       once('--whitespace')
       options.whitespace = takeValue('--whitespace')
@@ -118,6 +129,9 @@ function parseArguments(argv) {
 
   for (const name of ['before', 'after']) {
     if (options[name] === null) throw new Error(`--${name} is required`)
+  }
+  if (options.bundleRoot !== null && options.bundle === null) {
+    throw new Error('--bundle-root has no meaning without --bundle')
   }
   return options
 }
@@ -148,10 +162,20 @@ async function main(argv) {
     }
   }
 
+  /*
+   * The destination is settled before a single byte of either snapshot is
+   * read, and checked again below with the documents this run actually opened.
+   * The first pass cannot see a hard link to a document it has not listed yet;
+   * the second cannot fail early enough to keep a bad configuration from
+   * costing a whole run. Both are cheap, so both happen.
+   *
+   * A refused destination is a configuration error, so stdout stays empty.
+   */
+  const bundleRoot = options.bundle === null ? null : options.bundleRoot ?? process.cwd()
   let destination = null
   if (options.bundle !== null) {
     try {
-      destination = await resolveBundleDestination(roots, options.bundle)
+      destination = await resolveBundleDestination(roots, options.bundle, { root: bundleRoot })
     } catch (error) {
       process.stderr.write(`--bundle is not usable: ${error.message}\n`)
       return 2
@@ -160,6 +184,7 @@ async function main(argv) {
 
   let report
   let bundle
+  let inputs
   try {
     const result = await bundlePublicationDiff({
       before: options.before,
@@ -169,12 +194,24 @@ async function main(argv) {
     })
     report = result.report
     bundle = result.bundle
+    inputs = result.inputs
   } catch (error) {
     process.stderr.write(`${error.message}\n`)
     return 2
   }
 
   if (destination !== null) {
+    // Re-checked with the real paths of every document that was opened. A hard
+    // link to one of them has no target to resolve and shares no path with it,
+    // so `realpath` and string comparison both call it a different file; only
+    // device and inode see that it is the same one. Re-checking also closes
+    // the window between the first check and the write.
+    try {
+      destination = await resolveBundleDestination(roots, options.bundle, { root: bundleRoot, inputs })
+    } catch (error) {
+      process.stderr.write(`--bundle is not usable: ${error.message}\n`)
+      return 2
+    }
     try {
       await writeBundleFile(destination, bundle)
       process.stderr.write(

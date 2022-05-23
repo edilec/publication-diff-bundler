@@ -198,6 +198,7 @@ test('the bundle destination is refused inside either snapshot root', async (t) 
     () => resolveBundleDestination(roots, join(root, 'before', 'bundle.json')),
     /inside a snapshot root/,
   )
+  await mkdir(join(root, 'after', 'nested'))
   await assert.rejects(
     () => resolveBundleDestination(roots, join(root, 'after', 'nested', 'bundle.json')),
     /inside a snapshot root/,
@@ -223,7 +224,11 @@ test('the bundle destination refuses shapes it cannot write', async (t) => {
   const roots = [join(root, 'before'), join(root, 'after')]
 
   await assert.rejects(() => resolveBundleDestination(roots, ''), /non-empty path/)
-  await assert.rejects(() => resolveBundleDestination(roots, root), /not a file/)
+  await assert.rejects(() => resolveBundleDestination(roots, root), /not a regular file/)
+  await assert.rejects(
+    () => resolveBundleDestination(roots, join(root, 'absent', 'bundle.json')),
+    /directory that does not exist/,
+  )
 })
 
 test('writing the bundle leaves both snapshots untouched', async (t) => {
@@ -232,6 +237,7 @@ test('writing the bundle leaves both snapshots untouched', async (t) => {
   const roots = [join(root, 'before'), join(root, 'after')]
 
   const { bundle } = await bundlePublicationDiff({ before: roots[0], after: roots[1] })
+  await mkdir(join(root, 'out'))
   const destination = await resolveBundleDestination(roots, join(root, 'out', 'bundle.json'))
   await writeBundleFile(destination, bundle)
 

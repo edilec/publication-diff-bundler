@@ -53,7 +53,13 @@ test('paths reach the report and the bundle in code-unit order', async (t) => {
   const destination = join(await mkdtemp(join(tmpdir(), 'publication-diff-order-out-')), 'bundle.json')
   t.after(() => rm(dirname(destination), { recursive: true, force: true }))
 
-  const result = await runCli(['--before', before, '--after', after, '--bundle', destination, '--json'])
+  const result = await runCli([
+    '--before', before,
+    '--after', after,
+    '--bundle', destination,
+    '--bundle-root', dirname(destination),
+    '--json',
+  ])
   assert.equal(result.code, 0)
   const report = JSON.parse(result.stdout)
   const bundle = JSON.parse(await readFile(destination, 'utf8'))

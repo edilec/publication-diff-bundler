@@ -31,8 +31,18 @@ Two snapshot roots are walked: `--before` and `--after`. Files ending in `.html`
   command-line flags.
 
 **Neither snapshot is ever written to.** There is no auto-fix and no write path into a snapshot. The
-bundle goes to `--bundle`, which is refused if it resolves inside either root — including through a
-symlinked parent directory.
+bundle goes to `--bundle`, and four shapes of destination are refused before anything is opened:
+
+| Refused | Why the obvious guard misses it |
+| --- | --- |
+| A symbolic link **at** the destination | `realpath` on the destination *resolves* the link, and resolving is the dangerous act. It is refused on sight with `lstat`, whether or not its target exists yet. |
+| A symlinked directory **on the way** to the destination | A lexical prefix check passes for `root/link/out` where `link` leaves the root. The parent is resolved, then compared. |
+| A path resolving outside `--bundle-root` | `--bundle-root` defaults to the working directory and must be named explicitly to widen it. |
+| A **hard link** to a snapshot document | It has no target to resolve and shares no path with the document, so `realpath` and string comparison both call it a different file. Only device plus inode sees that it is the same file. |
+
+A destination that resolves inside either snapshot root is refused whatever `--bundle-root` says,
+including through a symlinked parent directory. Every refusal is a configuration error: exit 2, and
+stdout stays empty.
 
 ## Presence, and the difference between absent and unknown
 

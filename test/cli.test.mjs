@@ -109,9 +109,16 @@ test('--bundle writes the derived artifact and reports it on stderr only', async
   const root = await workspace(t)
   await writeFile(join(root, 'before', 'a.html'), '<p>one</p>')
   await writeFile(join(root, 'after', 'a.html'), '<p>two</p>')
+  await mkdir(join(root, 'out'))
   const destination = join(root, 'out', 'bundle.json')
 
-  const result = await run(['--before', join(root, 'before'), '--after', join(root, 'after'), '--bundle', destination, '--json'])
+  const result = await run([
+    '--before', join(root, 'before'),
+    '--after', join(root, 'after'),
+    '--bundle', destination,
+    '--bundle-root', root,
+    '--json',
+  ])
 
   assert.equal(result.code, 0)
   JSON.parse(result.stdout)
@@ -130,6 +137,7 @@ test('--bundle inside a snapshot root is a configuration error', async (t) => {
     '--before', join(root, 'before'),
     '--after', join(root, 'after'),
     '--bundle', join(root, 'after', 'bundle.json'),
+    '--bundle-root', root,
   ])
 
   assert.equal(result.code, 2)
@@ -208,9 +216,15 @@ test('a snapshot path carrying a C1 or bidi character reaches neither stdout nor
   await writeFile(join(root, 'before', 'kept.html'), '<p>x</p>')
   await writeFile(join(root, 'after', 'kept.html'), '<p>x</p>')
   await writeFile(join(root, 'after', `evil${NEL}ERROR   forged${RLO}rule${CSI}m.html`), '<p>y</p>')
+  await mkdir(join(root, 'out'))
   const destination = join(root, 'out', 'bundle.json')
 
-  const base = ['--before', join(root, 'before'), '--after', join(root, 'after'), '--bundle', destination]
+  const base = [
+    '--before', join(root, 'before'),
+    '--after', join(root, 'after'),
+    '--bundle', destination,
+    '--bundle-root', root,
+  ]
   const human = await run(base)
   const machine = await run([...base, '--json'])
   const written = await readFile(destination, 'utf8')
