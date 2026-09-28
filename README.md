@@ -39,13 +39,15 @@ So this tool does three things and refuses to compromise on any of them:
 Node 22 or newer. No runtime dependencies, no development dependencies.
 
 ```
-npm install publication-diff-bundler
+npm install github:edilec/publication-diff-bundler
 ```
+
+This installs the public GitHub source; `publication-diff-bundler` is not published to npm.
 
 ## Use
 
 ```
-publication-diff-bundler --before ./snapshots/v1 --after ./snapshots/v2 \
+npx publication-diff-bundler --before ./snapshots/v1 --after ./snapshots/v2 \
                          --bundle ./review/bundle.json
 ```
 
