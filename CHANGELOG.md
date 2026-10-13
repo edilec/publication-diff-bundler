@@ -7,7 +7,7 @@ All notable changes to this project are recorded here. The format follows
 Rule ids are part of the public interface: renaming or removing one is a breaking change and is
 recorded here.
 
-## [Unreleased]
+## [0.1.0] - 2026-10-14
 
 ### Added
 
@@ -49,4 +49,4 @@ recorded here.
   8-bit CSI) are not ECMAScript whitespace and are not escaped by `JSON.stringify`, so both used to
   reach stdout intact -- from a path or a metadata key as readily as from an excerpt.
 
-No release has been published.
+GitHub source release v0.1.0 — 2026-10-14.
